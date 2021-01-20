@@ -26,6 +26,8 @@ router.post("/register", async (request, response) => {
       const newUser = new User(userInfo);
       const hashedPassword = await bcrypt.hash(newUser.password, 8);
       newUser.password = hashedPassword;
+      const userId = await hashString(userInfo.email);
+      newUser.userId = userId;
       const userToken = jwt.sign(
         { _id: newUser._id.toString() },
         Buffer.from(SECRET_TOKEN_KEY).toString("base64")
@@ -33,8 +35,6 @@ router.post("/register", async (request, response) => {
       newUser.token.push(userToken);
       await newUser.save();
       await FriendLists.save();
-      request.session.user_id = newUser._id;
-      request.session.user = newUser;
       response.status(200).json({
         success: true,
         data: newUser,
@@ -69,8 +69,6 @@ router.post("/login", async (request, response) => {
         user.token.shift();
       }
       await user.save();
-      request.session.user_id = user._id;
-      request.session.user = user;
       response.status(200).json({
         success: true,
         data: user,
@@ -134,9 +132,10 @@ router.post("/verifyotp", async (request, response) => {
 });
 
 router.get("/user", auth, async (request, response) => {
+  let userInfo = request.session.user;
   response.status(200).json({
     success: true,
-    data: request.session.user,
+    data: userInfo,
   });
 });
 
@@ -169,6 +168,7 @@ router.get("/logout", auth, async (request, response) => {
     delete request.session.user;
     const userToken = request.header("Authorization");
     user.token.remove(userToken);
+    user.socket_id = "";
     await user.save();
     response.status(200).json({
       success: true,

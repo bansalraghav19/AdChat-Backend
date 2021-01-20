@@ -6,6 +6,7 @@ const User = require("./models/users");
 const { SECRET_SESSION_KEY } = require("./SECRET_KEYS");
 
 const session = require("express-session");
+const sharedsession = require("express-socket.io-session");
 
 const app = express();
 const server = http.createServer(app);
@@ -17,115 +18,150 @@ const io = socketio(server);
 // database connection
 require("./db/mongoose");
 
+const sessionMiddleware = session({
+  secret: SECRET_SESSION_KEY,
+  resave: false,
+  saveUninitialized: true,
+});
+
 app.use(express.json());
 app.use(cors());
-app.use(
-  session({
-    secret: SECRET_SESSION_KEY,
-    resave: false,
-    saveUninitialized: true,
-  })
-);
+app.use(sessionMiddleware);
+io.use(sharedsession(sessionMiddleware));
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 5000;
 
 const userRouter = require("./routers/users");
 app.use(userRouter);
 
-let user_id = null,
-  Email = null;
+const dashBoardRouter = require("./routers/userFriends");
+app.use(dashBoardRouter);
 
 io.on("connection", (socket) => {
-  socket.on("join", async ({ _id, email }) => {
-    if (_id) {
-      user_id = _id;
-      Email = email;
-      await User.findByIdAndUpdate(_id, {
-        socket_id: socket.id,
-      });
+  socket.on("join", async ({ _id, email, name }) => {
+    try {
+      if (_id) {
+        socket.handshake.session._id = _id;
+        socket.handshake.session.email = email;
+        socket.handshake.session.name = name;
+        await User.findByIdAndUpdate(_id, {
+          socket_id: socket.id,
+        });
+      }
+    } catch (error) {
+      console.log(error);
     }
   });
-  socket.on("addfriend", async ({ email, message, name }) => {
+  socket.on("addfriend", async ({ email, message }) => {
     try {
-      const friendsList = await Friends.findOne({ email: Email });
-      const friendUser = await User.findOne({ email });
-      const friendNotFriends = await Friends.findOne({ email });
-      if (!friendUser) {
-        socket.emit("addfriendr", {
+      const recieverProfile = await User.findOne({ email });
+      if (socket.handshake.session.email === email) {
+        socket.emit("addfriendresponse", {
           success: false,
-          messageStatus: 0,
+          messageStatus: `You cannot send request to yourself`,
+        });
+        return;
+      }
+      if (!recieverProfile) {
+        socket.emit("addfriendresponse", {
+          success: false,
+          messageStatus: `${email} is not registered on AdChat`,
         });
       } else {
-        console.log(Email, email);
-        let isDone = true;
-        if (friendsList) {
-          const list = friendsList.friendsList;
-          list.forEach((element) => {
-            if (element.email === email) {
-              isDone = false;
-              socket.emit("addfriendr", {
-                success: false,
-                messageStatus: 1,
-              });
-            }
-          });
-          friendsList.unmappedFriends.forEach((element) => {
-            if (element.email === Email) {
-              isDone = false;
-              socket.emit("addfriendr", {
-                success: false,
-                messageStatus: 3,
-              });
-            }
-          });
+        const curUserEmail = socket.handshake.session.email;
+        const curUserFriends = await Friends.findOne({
+          email: curUserEmail,
+        });
+        const recieverFriends = await Friends.findOne({ email });
+        {
+          const common = curUserFriends.friendsList.find(
+            (element) => element.email === email
+          );
+          if (common) {
+            socket.emit("addfriendresponse", {
+              success: false,
+              messageStatus: `${email} is already your friend`,
+            });
+            return;
+          }
         }
-        if (friendNotFriends) {
-          friendNotFriends.unmappedFriends.forEach((element) => {
-            if (element.email === Email) {
-              isDone = false;
-              socket.emit("addfriendr", {
-                success: false,
-                messageStatus: 2,
-              });
-            }
-          });
+        {
+          const common = recieverFriends.unmappedFriends.find(
+            (element) => element.email === curUserEmail
+          );
+          console.log(recieverFriends);
+          if (common) {
+            socket.emit("addfriendresponse", {
+              success: false,
+              messageStatus: `you have already sended request to ${email}`,
+            });
+            return;
+          }
         }
-        if (isDone) {
-          friendNotFriends.unmappedFriends.push({
-            email: Email,
+        {
+          const common = curUserFriends.unmappedFriends.find(
+            (element) => element.email === email
+          );
+          if (common) {
+            socket.emit("addfriendresponse", {
+              success: false,
+              messageStatus: `${email} has already send you send. To accept go to notification tab`,
+            });
+            return;
+          }
+        }
+        {
+          recieverFriends.unmappedFriends.push({
+            email: curUserEmail,
             message,
-            name,
+            name: socket.handshake.session.name,
           });
-          socket.emit("addfriendr", {
+          socket.emit("addfriendresponse", {
             success: true,
-            messageStatus: "done",
+            messageStatus: "Friend Request Sent",
           });
-          if (friendUser.socket_id === "") {
-            friendNotFriends.notification.push({
-              email: Email,
+          if (recieverProfile.socket_id === "") {
+            recieverProfile.notification.push({
+              email: curUserEmail,
               message,
-              name,
+              name: socket.handshake.session.name,
               typerequest: 1,
             });
           } else {
-            socket.broadcast.to(friendUser.socket_id).emit("notification", {
-              type: 1,
-              email: Email,
-              message,
-              name,
-            });
+            socket.broadcast
+              .to(recieverProfile.socket_id)
+              .emit("notification", {
+                type: 1,
+                email: curUserEmail,
+                message,
+                name: socket.handshake.session.name,
+              });
           }
-          await friendNotFriends.save();
+          await recieverFriends.save();
         }
       }
-    } catch (error) {}
+    } catch (error) {
+      console.log(error);
+    }
   });
+  socket.on('accepted', async ({ email }) => {
+
+  })
+  socket.on('declined', async ({ email }) => {
+    
+  })
   socket.on("disconnect", async () => {
     try {
-      await User.findByIdAndUpdate(user_id, {
-        socket_id: "",
-      });
-    } catch (error) {}
+      const user = await User.findByIdAndUpdate(
+        socket.handshake.session._id,
+        {
+          socket_id: "",
+        },
+        { new: true }
+      );
+    } catch (error) {
+      console.log(error);
+    }
   });
 });
 
