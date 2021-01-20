@@ -26,12 +26,16 @@ friendList:: {
   lastMessage: String,
   time: String,
   number_of_unread: number,
+  last_chat: [
+    max: 1000
+  ]
 }
 
 unmappedFriends {
   email: String, 
   name: String,
-  message: String
+  message: String,
+  user_image: String,
 }
 
 */

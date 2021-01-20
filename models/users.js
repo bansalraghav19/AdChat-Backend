@@ -10,6 +10,10 @@ const User = new mongoose.model("user", {
     required: true,
     unique: true,
   },
+  about: {
+    type: String,
+    default: "",
+  },
   password: {
     type: String,
     required: true,
@@ -20,7 +24,7 @@ const User = new mongoose.model("user", {
   },
   user_image: {
     type: String,
-    default: "dummy.jpg",
+    default: "./dummy.png",
   },
   token: {
     type: Array,
