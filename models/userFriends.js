@@ -25,6 +25,7 @@ friendList:: {
   photoLink: String,
   lastMessage: String,
   time: String,
+  room_id: String,
   number_of_unread: number,
   last_chat: [
     max: 1000

@@ -1,8 +1,10 @@
 const express = require("express");
 const http = require("http");
+const { v4: uuidv4 } = require("uuid");
 const cors = require("cors");
 const Friends = require("./models/userFriends");
 const User = require("./models/users");
+const Rooms = require("./models/rooms");
 const { SECRET_SESSION_KEY } = require("./SECRET_KEYS");
 
 const session = require("express-session");
@@ -37,6 +39,9 @@ app.use(userRouter);
 const dashBoardRouter = require("./routers/userFriends");
 app.use(dashBoardRouter);
 
+const roomsRouter = require("./routers/roomChat");
+app.use(roomsRouter);
+
 io.on("connection", (socket) => {
   socket.on("join", async ({ _id, email, name }) => {
     try {
@@ -44,9 +49,16 @@ io.on("connection", (socket) => {
         socket.handshake.session._id = _id;
         socket.handshake.session.email = email;
         socket.handshake.session.name = name;
-        await User.findByIdAndUpdate(_id, {
-          socket_id: socket.id,
-        });
+        socket.handshake.session.user = await User.findByIdAndUpdate(
+          _id,
+          {
+            socket_id: socket.id,
+          },
+          { new: true }
+        );
+        const userFriends = await Friends.findOne({ email });
+        const allRooms = userFriends.friendsList.map((friend) => friend.roomId);
+        socket.join(allRooms);
       }
     } catch (error) {
       console.log(error);
@@ -89,7 +101,6 @@ io.on("connection", (socket) => {
           const common = recieverFriends.unmappedFriends.find(
             (element) => element.email === curUserEmail
           );
-          console.log(recieverFriends);
           if (common) {
             socket.emit("addfriendresponse", {
               success: false,
@@ -115,6 +126,7 @@ io.on("connection", (socket) => {
             email: curUserEmail,
             message,
             name: socket.handshake.session.name,
+            user_image: socket.handshake.session.user.user_image,
           });
           socket.emit("addfriendresponse", {
             success: true,
@@ -130,11 +142,11 @@ io.on("connection", (socket) => {
           } else {
             socket.broadcast
               .to(recieverProfile.socket_id)
+              .emit("refershFriends");
+            socket.broadcast
+              .to(recieverProfile.socket_id)
               .emit("notification", {
-                type: 1,
-                email: curUserEmail,
-                message,
-                name: socket.handshake.session.name,
+                message: `${socket.handshake.session.email} send you friend Request`,
               });
           }
           await recieverFriends.save();
@@ -144,12 +156,97 @@ io.on("connection", (socket) => {
       console.log(error);
     }
   });
-  socket.on('accepted', async ({ email }) => {
-
-  })
-  socket.on('declined', async ({ email }) => {
-    
-  })
+  socket.on("accepted", async ({ email }) => {
+    const currentFriends = await Friends.findOne({
+      email: socket.handshake.session.email,
+    });
+    const acceptedUser = await User.findOne({ email });
+    const currentUser = socket.handshake.session.user;
+    const acceptedUserFriends = await Friends.findOne({ email });
+    const newUnmapped = currentFriends.unmappedFriends.filter(
+      (friend) => friend.email !== email
+    );
+    currentFriends.unmappedFriends = newUnmapped;
+    const roomId = uuidv4();
+    currentFriends.friendsList.push({
+      email,
+      name: acceptedUser.name,
+      userId: acceptedUser.userId,
+      user_image: acceptedUser.user_image,
+      roomId,
+    });
+    acceptedUserFriends.friendsList.push({
+      email: currentUser.email,
+      name: currentUser.name,
+      userId: currentUser.userId,
+      user_image: currentUser.user_image,
+      roomId,
+    });
+    const newRoom = new Rooms({
+      roomId,
+      messages: [],
+    });
+    await newRoom.save();
+    await currentFriends.save();
+    await acceptedUserFriends.save();
+    socket.emit("refershFriends");
+    if (acceptedUser.socket_id !== "") {
+      socket.broadcast.to(acceptedUser.socket_id).emit("refershFriends");
+      socket.broadcast.to(acceptedUser.socket_id).emit("notification", {
+        message: `${socket.handshake.session.email} accepted your friend Request`,
+        name: socket.handshake.session.name,
+        typerequest: 200,
+      });
+    } else {
+      acceptedUser.notification.push({
+        message: `${socket.handshake.session.email} accepted your friend Request`,
+        name: socket.handshake.session.name,
+        typerequest: 200,
+      });
+      await acceptedUser.save();
+    }
+  });
+  socket.on("declined", async ({ email }) => {
+    try {
+      console.log(email);
+      const currentFriends = await Friends.findOne({
+        email: socket.handshake.session.email,
+      });
+      const rejectedUser = await User.findOne({ email });
+      const newUnmapped = currentFriends.unmappedFriends.filter(
+        (friend) => friend.email !== email
+      );
+      currentFriends.unmappedFriends = newUnmapped;
+      await currentFriends.save();
+      socket.emit("refershFriends");
+      if (rejectedUser.socket_id !== "") {
+        socket.broadcast.to(rejectedUser.socket_id).emit("notification", {
+          message: `${socket.handshake.session.email} rejected your friend Request`,
+          name: socket.handshake.session.name,
+          typerequest: -1,
+        });
+      } else {
+        rejectedUser.notification.push({
+          message: `${socket.handshake.session.email} rejected your friend Request`,
+          name: socket.handshake.session.name,
+          typerequest: -1,
+        });
+        await rejectedUser.save();
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  });
+  socket.on("sendMessage", ({ roomId, message }) => {
+    try {
+      socket.broadcast.to(roomId).emit("revieveMessage", message);
+      socket.broadcast
+        .to(roomId)
+        .emit("notification", { message: "New Message" });
+    } catch (error) {
+      console.log(error);
+    }
+  });
   socket.on("disconnect", async () => {
     try {
       const user = await User.findByIdAndUpdate(

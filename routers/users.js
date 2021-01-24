@@ -6,6 +6,7 @@ const { generateOTP, hashString, messgaeTemplate } = require("../lib/helpers");
 const bcrypt = require("bcrypt");
 const auth = require("../middleware/auth");
 const sgMail = require("@sendgrid/mail");
+const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 
 const router = new express.Router();
@@ -26,8 +27,7 @@ router.post("/register", async (request, response) => {
       const newUser = new User(userInfo);
       const hashedPassword = await bcrypt.hash(newUser.password, 8);
       newUser.password = hashedPassword;
-      const userId = await hashString(userInfo.email);
-      newUser.userId = userId;
+      newUser.userId = uuidv4();
       const userToken = jwt.sign(
         { _id: newUser._id.toString() },
         Buffer.from(SECRET_TOKEN_KEY).toString("base64")
@@ -133,6 +133,9 @@ router.post("/verifyotp", async (request, response) => {
 
 router.get("/user", auth, async (request, response) => {
   let userInfo = request.session.user;
+  userInfo.password = undefined;
+  userInfo.token = undefined;
+  userInfo.socket_id = undefined;
   response.status(200).json({
     success: true,
     data: userInfo,
@@ -149,6 +152,26 @@ router.put("/edituser", auth, async (request, response) => {
         new: true,
       }
     );
+    await Friends.updateMany(
+      { "friendsList.email": user.email },
+      {
+        $set: {
+          "friendsList.$.user_image": user.user_image,
+          "friendsList.$.name": user.name,
+        },
+      },
+      { multi: true }
+    );
+    await Friends.updateMany(
+      { "unmappedFriends.email": user.email },
+      {
+        $set: {
+          "unmappedFriends.$.user_image": user.user_image,
+          "unmappedFriends.$.name": user.name,
+        },
+      },
+      { multi: true }
+    );
     response.status(200).json({
       success: true,
       data: user,
@@ -157,6 +180,56 @@ router.put("/edituser", auth, async (request, response) => {
     response.status(404).json({
       success: false,
       error: err.error,
+    });
+  }
+});
+
+router.put("/changepassword", auth, async (request, response) => {
+  try {
+    const user = await User.findOne({ email: request.session._id });
+    const isMatch = await bcrypt.compare(request.body.password, user.password);
+    if (!isMatch) {
+      response.status(402).json({
+        success: false,
+        message: "Wrong current Password entered",
+      });
+    } else {
+      const hashedPassword = await bcrypt.hash(user.newPassword, 8);
+      user.password = hashedPassword;
+      await user.save();
+      response.status(201).json({
+        success: true,
+        data: {
+          message: "Password Changed",
+        },
+      });
+    }
+  } catch (error) {
+    response.status(502).json({
+      success: false,
+      message: "There was some problem, try again",
+    });
+  }
+});
+
+router.post("/resetpassword", async (request, response) => {
+  try {
+    const user = await User.findOne({
+      email: request.body.email.toLowerCase(),
+    });
+    const hashedPassword = await bcrypt.hash(user.password, 8);
+    user.password = hashedPassword;
+    await user.save();
+    response.status(201).json({
+      success: true,
+      data: {
+        message: "Password Changed",
+      },
+    });
+  } catch (error) {
+    response.status(502).json({
+      success: false,
+      message: "There was some problem, try again",
     });
   }
 });

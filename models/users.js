@@ -18,6 +18,10 @@ const User = new mongoose.model("user", {
     type: String,
     required: true,
   },
+  userId: {
+    type: String,
+    required: true,
+  },
   socket_id: {
     type: String,
     default: "",

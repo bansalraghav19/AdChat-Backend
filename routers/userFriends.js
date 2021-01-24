@@ -22,7 +22,7 @@ router.get("/getfriends", auth, async (request, response) => {
   }
 });
 
-router.get("/getuser/:id", auth, async (request, response) => {
+router.get("/friend/:id", auth, async (request, response) => {
   try {
     const userId = request.params.id;
     const requestedUser = await User.findOne({ userId });
@@ -38,12 +38,12 @@ router.get("/getuser/:id", auth, async (request, response) => {
         message: "request user is not your friend",
       });
     } else {
-      delete requestedUser.password;
-      delete requestedUser.socket_id;
-      delete requestedUser.token;
-      delete requestedUser.notification;
+      requestedUser.password = undefined;
+      requestedUser.socket_id = undefined;
+      requestedUser.token = undefined;
+      requestedUser.notification = undefined;
       response.status(200).json({
-        success: false,
+        success: true,
         data: requestedUser,
       });
     }
