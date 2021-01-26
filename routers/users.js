@@ -186,15 +186,17 @@ router.put("/edituser", auth, async (request, response) => {
 
 router.put("/changepassword", auth, async (request, response) => {
   try {
-    const user = await User.findOne({ email: request.session._id });
+    const user = await User.findOne({ _id: request.session.user_id });
     const isMatch = await bcrypt.compare(request.body.password, user.password);
     if (!isMatch) {
-      response.status(402).json({
+      response.status(201).json({
         success: false,
-        message: "Wrong current Password entered",
+        data: {
+          message: "Wrong current Password entered",
+        },
       });
     } else {
-      const hashedPassword = await bcrypt.hash(user.newPassword, 8);
+      const hashedPassword = await bcrypt.hash(request.body.newPassword, 8);
       user.password = hashedPassword;
       await user.save();
       response.status(201).json({
@@ -217,7 +219,7 @@ router.post("/resetpassword", async (request, response) => {
     const user = await User.findOne({
       email: request.body.email.toLowerCase(),
     });
-    const hashedPassword = await bcrypt.hash(user.password, 8);
+    const hashedPassword = await bcrypt.hash(request.body.password, 8);
     user.password = hashedPassword;
     await user.save();
     response.status(201).json({

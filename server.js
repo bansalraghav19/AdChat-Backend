@@ -66,6 +66,7 @@ io.on("connection", (socket) => {
   });
   socket.on("addfriend", async ({ email, message }) => {
     try {
+      email = email.toLowerCase();
       const recieverProfile = await User.findOne({ email });
       if (socket.handshake.session.email === email) {
         socket.emit("addfriendresponse", {
@@ -237,12 +238,15 @@ io.on("connection", (socket) => {
       console.log(error);
     }
   });
-  socket.on("sendMessage", ({ roomId, message }) => {
+  socket.on("sendMessage", async ({ roomId, message }) => {
     try {
       socket.broadcast.to(roomId).emit("revieveMessage", message);
       socket.broadcast
         .to(roomId)
         .emit("notification", { message: "New Message" });
+      const room = await Rooms.findOne({ roomId });
+      room.messages.push(message);
+      await room.save();
     } catch (error) {
       console.log(error);
     }
