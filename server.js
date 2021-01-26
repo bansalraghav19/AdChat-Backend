@@ -6,6 +6,7 @@ const Friends = require("./models/userFriends");
 const User = require("./models/users");
 const Rooms = require("./models/rooms");
 const { SECRET_SESSION_KEY } = require("./SECRET_KEYS");
+const PORT = process.env.PORT || 5000;
 
 const session = require("express-session");
 const sharedsession = require("express-socket.io-session");
@@ -35,8 +36,6 @@ app.use(function (req, res, next) {
   res.header("Access-Control-Allow-Headers", "X-Requested-With");
   next();
 });
-
-const PORT = process.env.PORT || 5000;
 
 const userRouter = require("./routers/users");
 app.use(userRouter);
@@ -203,6 +202,7 @@ io.on("connection", (socket) => {
         name: socket.handshake.session.name,
         typerequest: 200,
       });
+      socket.join(roomId);
     } else {
       acceptedUser.notification.push({
         message: `${socket.handshake.session.email} accepted your friend Request`,
