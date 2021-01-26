@@ -16,7 +16,10 @@ const server = http.createServer(app);
 
 const socketio = require("socket.io");
 
-const io = socketio(server);
+const io = socketio(server, {
+  cors: true,
+  origins: ["https://advchatapp.herokuapp.com/"],
+});
 
 // database connection
 require("./db/mongoose");
