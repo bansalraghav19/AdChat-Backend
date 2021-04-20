@@ -248,7 +248,9 @@ io.on("connection", (socket) => {
   });
   socket.on("sendMessage", async ({ roomId, message }) => {
     try {
-      socket.broadcast.to(roomId).emit("revieveMessage", message);
+      socket.broadcast
+        .to(roomId)
+        .emit("revieveMessage", { ...message, roomId });
       socket.broadcast
         .to(roomId)
         .emit("notification", { message: "New Message" });
