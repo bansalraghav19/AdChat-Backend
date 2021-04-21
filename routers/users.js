@@ -112,7 +112,7 @@ router.post("/checkUser", async (request, response) => {
 
 router.post("/verifyotp", async (request, response) => {
   try {
-    const OTP = 112233;
+    const OTP = "112233";
     console.log(OTP);
     const message = messgaeTemplate(request.body.email.toLowerCase(), OTP);
     const hashedOtp = await hashString(OTP);
